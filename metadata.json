@@ -1,0 +1,5 @@
+{
+  "name": "Lumina Consensus",
+  "description": "Proof-of-attention distributed network node using optical screen flashing.",
+  "requestFramePermissions": ["camera"]
+}
