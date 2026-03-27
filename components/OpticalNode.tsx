@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Camera, Send, Terminal, Eye, Radio, ShieldCheck, ShieldAlert, Wrench, Shield, X } from 'lucide-react';
+import { Camera, Send, Activity, Terminal, Eye, Radio, ShieldCheck, ShieldAlert, Settings2, Wrench } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 type ColorName = 'RED' | 'GREEN' | 'BLUE' | 'WHITE' | 'YELLOW' | 'BLACK' | 'UNKNOWN';
@@ -128,7 +128,7 @@ export default function OpticalNode() {
   const [isReceiving, setIsReceiving] = useState(false);
   const [isTransmitting, setIsTransmitting] = useState(false);
   const [flashColor, setFlashColor] = useState<string>('#000000');
-  const [logs, setLogs] = useState<{ id: number; timestamp: number; text: string; type: 'info' | 'success' | 'warning' | 'error' }[]>([]);
+  const [logs, setLogs] = useState<{ id: number; text: string; type: 'info' | 'success' | 'warning' | 'error' }[]>([]);
   const [messageToTransmit, setMessageToTransmit] = useState('SYNC');
   const [baudRate, setBaudRate] = useState<100 | 200 | 400>(200);
   const [lastVerifiedContract, setLastVerifiedContract] = useState<{text: string, valid: boolean, corrections: number} | null>(null);
@@ -137,34 +137,34 @@ export default function OpticalNode() {
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState<string>('');
 
-  // UI panel toggles
-  const [showTransmitter, setShowTransmitter] = useState(false);
-  const [showLogs, setShowLogs] = useState(false);
-
   // Multi-source tracking state
   const sourcesRef = useRef<Map<string, SourceState>>(new Map());
-  const logIdRef = useRef(0);
 
   const addLog = useCallback((text: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
-    const id = ++logIdRef.current;
-    setLogs(prev => [{ id, timestamp: Date.now(), text, type }, ...prev].slice(0, 20));
+    setLogs(prev => [{ id: Date.now(), text, type }, ...prev].slice(0, 20));
   }, []);
 
   // Enumerate Cameras
   useEffect(() => {
+    let mounted = true;
     navigator.mediaDevices.enumerateDevices().then(devices => {
+      if (!mounted) return;
       const videoDevices = devices.filter(d => d.kind === 'videoinput');
       setCameras(videoDevices);
-      if (videoDevices.length > 0 && !selectedCamera) {
+      if (videoDevices.length > 0) {
         // Prefer back camera if available
         const backCamera = videoDevices.find(d => d.label.toLowerCase().includes('back') || d.label.toLowerCase().includes('environment'));
-        setSelectedCamera(backCamera ? backCamera.deviceId : videoDevices[0].deviceId);
+        setSelectedCamera(prev => prev || (backCamera ? backCamera.deviceId : videoDevices[0].deviceId));
       }
     }).catch(err => console.error("Error enumerating devices:", err));
+    
+    return () => { mounted = false; };
   }, []);
 
   // Camera Setup
   useEffect(() => {
+    const videoElement = videoRef.current;
+    
     if (isReceiving) {
       const constraints: MediaStreamConstraints = {
         video: selectedCamera 
@@ -174,8 +174,8 @@ export default function OpticalNode() {
 
       navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+          if (videoElement) {
+            videoElement.srcObject = stream;
             addLog('Optical sensor activated (Multi-source tracking)', 'success');
           }
         })
@@ -185,11 +185,10 @@ export default function OpticalNode() {
           setIsReceiving(false);
         });
     } else {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      if (videoElement && videoElement.srcObject) {
+        const tracks = (videoElement.srcObject as MediaStream).getTracks();
         tracks.forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-        addLog('Optical sensor deactivated', 'info');
+        videoElement.srcObject = null;
       }
       // Clear overlay
       if (overlayCanvasRef.current) {
@@ -198,8 +197,8 @@ export default function OpticalNode() {
       }
     }
     return () => {
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+      if (videoElement && videoElement.srcObject) {
+        const tracks = (videoElement.srcObject as MediaStream).getTracks();
         tracks.forEach(track => track.stop());
       }
     };
@@ -382,359 +381,213 @@ export default function OpticalNode() {
   };
 
   return (
-    <div className="relative h-full w-full overflow-hidden">
-
-      {/* ===== FULLSCREEN VIDEO BACKGROUND ===== */}
-      {isReceiving && (
-        <>
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="absolute inset-0 w-full h-full object-cover"
-          />
-          <canvas ref={canvasRef} className="hidden" />
-          <canvas
-            ref={overlayCanvasRef}
-            className="absolute inset-0 w-full h-full object-cover pointer-events-none z-[5]"
-          />
-          {/* Subtle scan grid */}
-          <div className="absolute inset-0 pointer-events-none z-[6] opacity-15">
-            <div className="w-full h-full grid grid-cols-6 grid-rows-6">
-              {Array.from({ length: 36 }).map((_, i) => (
-                <div key={i} className="border border-emerald-500/30" />
-              ))}
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Left Column: Optical Interface */}
+      <div className="lg:col-span-2 space-y-6">
+        
+        {/* Receiver Panel */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden relative group">
+          <div className="absolute top-0 left-0 w-full p-3 bg-gradient-to-b from-black/80 to-transparent z-20 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+            <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-zinc-400">
+              <Eye className="w-4 h-4" />
+              OPTICAL SENSOR (LBP RX)
             </div>
-          </div>
-          {/* Vignette */}
-          <div
-            className="absolute inset-0 pointer-events-none z-[7]"
-            style={{
-              background:
-                'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.7) 100%)',
-            }}
-          />
-        </>
-      )}
-
-      {/* ===== FULLSCREEN TRANSMIT FLASH ===== */}
-      {isTransmitting && (
-        <div
-          className="absolute inset-0 z-[50] flex items-center justify-center"
-          style={{
-            backgroundColor: flashColor,
-            transition: `background-color ${baudRate * 0.2}ms ease`,
-          }}
-        >
-          <span className="text-5xl font-bold tracking-[0.3em] mix-blend-difference text-white select-none">
-            TRANSMITTING
-          </span>
-        </div>
-      )}
-
-      {/* ===== IDLE / ONBOARDING SCREEN ===== */}
-      {!isReceiving && !isTransmitting && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center p-8">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="flex flex-col items-center gap-8 max-w-sm text-center"
-          >
-            <div className="relative">
-              <div className="w-24 h-24 rounded-full border-2 border-emerald-500/20 flex items-center justify-center">
-                <Camera className="w-12 h-12 text-emerald-500/40" />
-              </div>
-              <div
-                className="absolute -inset-4 rounded-full border border-emerald-500/10 animate-ping"
-                style={{ animationDuration: '3s' }}
-              />
-            </div>
-
-            <div>
-              <h2 className="text-xl font-bold text-emerald-400 tracking-[0.2em] mb-3">
-                OPTICAL RECEIVER
-              </h2>
-              <p className="text-sm text-emerald-700 leading-relaxed">
-                Point your camera at a screen broadcasting via the Lumina
-                Light-Based Protocol. The sensor will detect and decode color
-                transmissions in real time.
-              </p>
-            </div>
-
-            {cameras.length > 1 && (
-              <select
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <select 
                 value={selectedCamera}
                 onChange={(e) => setSelectedCamera(e.target.value)}
-                className="bg-black/50 border border-emerald-500/20 text-xs text-emerald-600 rounded-lg px-4 py-2 outline-none backdrop-blur-sm"
+                disabled={isReceiving}
+                className="bg-black/50 border border-zinc-700 text-xs text-zinc-300 rounded px-2 py-1 outline-none max-w-[140px] truncate backdrop-blur-sm"
               >
-                {cameras.map((c) => (
+                {cameras.length === 0 && <option value="">No cameras found</option>}
+                {cameras.map(c => (
                   <option key={c.deviceId} value={c.deviceId}>
-                    {c.label || `Camera ${c.deviceId.slice(0, 5)}`}
+                    {c.label || `Camera ${c.deviceId.slice(0,5)}`}
                   </option>
                 ))}
               </select>
-            )}
-
-            <button
-              onClick={() => setIsReceiving(true)}
-              className="px-10 py-4 bg-emerald-500/10 border-2 border-emerald-500/40 text-emerald-400 font-bold text-base tracking-[0.15em] rounded-2xl hover:bg-emerald-500/20 hover:border-emerald-500/60 transition-all active:scale-95"
-            >
-              <Eye className="w-5 h-5 inline mr-3 -mt-0.5" />
-              ACTIVATE SENSOR
-            </button>
-          </motion.div>
-        </div>
-      )}
-
-      {/* ===== TOP BAR (glass) ===== */}
-      <div className="absolute top-0 left-0 right-0 z-40 p-3">
-        <div className="flex items-center justify-between backdrop-blur-2xl bg-black/50 border border-white/[0.08] rounded-2xl px-4 py-2.5 shadow-2xl">
-          <div className="flex items-center gap-2.5">
-            <Shield className="w-5 h-5 text-emerald-400" />
-            <div>
-              <h1 className="text-xs font-bold tracking-[0.15em] text-emerald-400">
-                LUMINA PROTOCOL
-              </h1>
-              <p className="text-[9px] text-emerald-700 tracking-wider">
-                NODE v1.0.4
-              </p>
+              <button 
+                onClick={() => {
+                  if (isReceiving) {
+                    addLog('Optical sensor deactivated', 'info');
+                  }
+                  setIsReceiving(!isReceiving);
+                }}
+                className={`px-3 py-1 text-xs font-bold rounded-full transition-colors whitespace-nowrap ${isReceiving ? 'bg-red-500/20 text-red-500 border border-red-500/50' : 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/50'}`}
+              >
+                {isReceiving ? 'DEACTIVATE' : 'ACTIVATE'}
+              </button>
             </div>
           </div>
-          <div className="flex items-center gap-2.5">
-            {isReceiving && (
+          
+          <div className="relative aspect-video bg-black flex items-center justify-center overflow-hidden">
+            {isReceiving ? (
               <>
-                <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 tracking-wider">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                    <span className="relative h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  </span>
-                  SCANNING
-                </div>
-                {cameras.length > 1 && (
-                  <select
-                    value={selectedCamera}
-                    onChange={(e) => {
-                      setSelectedCamera(e.target.value);
-                    }}
-                    className="bg-white/5 border border-white/10 text-[10px] text-zinc-400 rounded-lg px-2 py-1 outline-none max-w-[100px] truncate"
-                  >
-                    {cameras.map((c) => (
-                      <option key={c.deviceId} value={c.deviceId}>
-                        {c.label || `Cam ${c.deviceId.slice(0, 5)}`}
-                      </option>
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="absolute inset-0 w-full h-full object-cover opacity-60"
+                />
+                <canvas ref={canvasRef} className="hidden" />
+                <canvas ref={overlayCanvasRef} className="absolute inset-0 w-full h-full object-cover pointer-events-none z-10" />
+                
+                {/* Targeting Reticle (Background) */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-30">
+                  <div className="w-full h-full grid grid-cols-6 grid-rows-6">
+                    {Array.from({ length: 36 }).map((_, i) => (
+                      <div key={i} className="border border-emerald-500/10" />
                     ))}
-                  </select>
-                )}
-                <button
-                  onClick={() => setIsReceiving(false)}
-                  className="px-3 py-1 text-[10px] font-bold tracking-wider bg-red-500/10 text-red-400 border border-red-500/30 rounded-full hover:bg-red-500/20 transition-colors"
-                >
-                  STOP
-                </button>
+                  </div>
+                </div>
               </>
+            ) : (
+              <div className="text-zinc-600 flex flex-col items-center gap-2">
+                <Camera className="w-8 h-8 opacity-50" />
+                <span className="text-sm tracking-widest">SENSOR OFFLINE</span>
+              </div>
             )}
           </div>
         </div>
+
+        {/* Transmitter Panel */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 text-xs font-semibold tracking-wider text-zinc-400">
+              <Radio className="w-4 h-4" />
+              BROADCAST EMITTER (LBP TX)
+            </div>
+            <div className="flex items-center gap-2">
+              <Settings2 className="w-4 h-4 text-zinc-500" />
+              <select 
+                value={baudRate}
+                onChange={(e) => setBaudRate(Number(e.target.value) as any)}
+                disabled={isTransmitting}
+                className="bg-black border border-zinc-800 text-xs text-zinc-400 rounded px-2 py-1 outline-none"
+              >
+                <option value={400}>Slow (400ms)</option>
+                <option value={200}>Standard (200ms)</option>
+                <option value={100}>Fast (100ms)</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row gap-4">
+            <input 
+              type="text" 
+              value={messageToTransmit}
+              onChange={(e) => setMessageToTransmit(e.target.value)}
+              disabled={isTransmitting}
+              className="flex-1 bg-black border border-zinc-800 rounded-lg px-4 py-3 sm:py-2 text-emerald-500 font-mono text-sm focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 min-w-0"
+              placeholder="Enter contract payload..."
+              maxLength={16}
+            />
+            <button 
+              onClick={transmitData}
+              disabled={isTransmitting || !messageToTransmit}
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-bold px-6 py-3 sm:py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shrink-0"
+            >
+              <Send className="w-4 h-4" />
+              BROADCAST
+            </button>
+          </div>
+
+          {/* Flash Area */}
+          <div 
+            className="h-32 rounded-lg border border-zinc-800 flex items-center justify-center relative overflow-hidden"
+            style={{ backgroundColor: flashColor, transition: `background-color ${baudRate * 0.2}ms ease` }}
+          >
+            {isTransmitting ? (
+              <span className="text-black font-bold tracking-widest mix-blend-difference z-10">TRANSMITTING...</span>
+            ) : (
+              <span className="text-zinc-600 text-sm tracking-widest">EMITTER IDLE</span>
+            )}
+          </div>
+        </div>
+
       </div>
 
-      {/* ===== VERIFIED CONTRACT FLOATING CARD ===== */}
-      <AnimatePresence>
-        {lastVerifiedContract && isReceiving && (
-          <motion.div
-            initial={{ opacity: 0, y: -10, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute top-20 right-3 z-40 w-64"
-          >
-            <div
-              className={`backdrop-blur-2xl border rounded-2xl p-3.5 shadow-2xl ${
-                lastVerifiedContract.valid
-                  ? 'bg-emerald-950/60 border-emerald-500/30'
-                  : 'bg-red-950/60 border-red-500/30'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5">
-                  {lastVerifiedContract.valid ? (
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  ) : (
-                    <ShieldAlert className="w-4 h-4 text-red-400" />
-                  )}
-                  <span
-                    className={`text-[10px] font-bold tracking-wider ${
-                      lastVerifiedContract.valid
-                        ? 'text-emerald-400'
-                        : 'text-red-400'
-                    }`}
-                  >
-                    {lastVerifiedContract.valid ? 'VALIDATED' : 'CORRUPTED'}
-                  </span>
-                </div>
-                {lastVerifiedContract.corrections > 0 && (
-                  <div className="flex items-center gap-1 text-[9px] text-yellow-400 bg-yellow-500/10 px-1.5 py-0.5 rounded-full">
-                    <Wrench className="w-2.5 h-2.5" />
-                    {lastVerifiedContract.corrections} fixed
-                  </div>
-                )}
-              </div>
-              <div className="font-mono text-white text-sm break-all bg-black/30 rounded-lg px-2.5 py-2">
-                {lastVerifiedContract.text}
-              </div>
+      {/* Right Column: Status & Logs */}
+      <div className="space-y-6">
+        
+        {/* Network Status */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 space-y-4">
+          <h3 className="text-xs font-semibold tracking-wider text-zinc-400 flex items-center gap-2">
+            <Activity className="w-4 h-4" />
+            NODE STATUS
+          </h3>
+          
+          <div className="space-y-3">
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+              <span className="text-zinc-500 text-sm">Protocol</span>
+              <span className="font-mono text-emerald-500 text-sm">LBP v3 (FEC Enabled)</span>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ===== BOTTOM PANELS ===== */}
-      <div className="absolute bottom-0 left-0 right-0 z-40 p-3 space-y-2.5">
-        {/* Expandable Log Panel */}
-        <AnimatePresence>
-          {showLogs && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="backdrop-blur-2xl bg-black/60 border border-white/[0.08] rounded-2xl p-4 max-h-48 overflow-y-auto shadow-2xl">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2 text-[10px] font-bold tracking-wider text-zinc-400">
-                    <Terminal className="w-3.5 h-3.5" />
-                    SYSTEM LOG
+            <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+              <span className="text-zinc-500 text-sm">Integrity Check</span>
+              <span className="font-mono text-emerald-500 text-sm">Hamming(7,4) + CRC8</span>
+            </div>
+            
+            <div className="pt-2">
+              <span className="text-zinc-500 text-xs block mb-2">LAST VERIFIED CONTRACT</span>
+              {lastVerifiedContract ? (
+                <div className={`p-3 rounded border ${lastVerifiedContract.valid ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {lastVerifiedContract.valid ? <ShieldCheck className="w-4 h-4 text-emerald-500" /> : <ShieldAlert className="w-4 h-4 text-red-500" />}
+                      <span className={`text-sm font-bold ${lastVerifiedContract.valid ? 'text-emerald-500' : 'text-red-500'}`}>
+                        {lastVerifiedContract.valid ? 'VALIDATED' : 'CORRUPTED'}
+                      </span>
+                    </div>
+                    {lastVerifiedContract.corrections > 0 && (
+                      <div className="flex items-center gap-1 text-xs text-yellow-500 bg-yellow-500/10 px-2 py-0.5 rounded">
+                        <Wrench className="w-3 h-3" />
+                        {lastVerifiedContract.corrections} bits fixed
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => setShowLogs(false)}
-                    className="text-zinc-500 hover:text-zinc-300"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="space-y-1.5 font-mono text-[10px]">
-                  <AnimatePresence>
-                    {logs.map((log) => (
-                      <motion.div
-                        key={log.id}
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className={`flex gap-2 ${
-                          log.type === 'error'
-                            ? 'text-red-400'
-                            : log.type === 'success'
-                              ? 'text-emerald-400'
-                              : log.type === 'warning'
-                                ? 'text-yellow-400'
-                                : 'text-zinc-500'
-                        }`}
-                      >
-                        <span className="opacity-40 shrink-0">
-                          [{new Date(log.timestamp).toLocaleTimeString()}]
-                        </span>
-                        <span className="break-all">{log.text}</span>
-                      </motion.div>
-                    ))}
-                  </AnimatePresence>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Expandable Transmitter Panel */}
-        <AnimatePresence>
-          {showTransmitter && !isTransmitting && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="backdrop-blur-2xl bg-black/60 border border-white/[0.08] rounded-2xl p-4 space-y-3 shadow-2xl">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-[10px] font-bold tracking-wider text-zinc-400">
-                    <Radio className="w-3.5 h-3.5" />
-                    BROADCAST EMITTER
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <select
-                      value={baudRate}
-                      onChange={(e) =>
-                        setBaudRate(Number(e.target.value) as 100 | 200 | 400)
-                      }
-                      className="bg-white/5 border border-white/10 text-[10px] text-zinc-400 rounded-lg px-2 py-1 outline-none"
-                    >
-                      <option value={400}>Slow</option>
-                      <option value={200}>Standard</option>
-                      <option value={100}>Fast</option>
-                    </select>
-                    <button
-                      onClick={() => setShowTransmitter(false)}
-                      className="text-zinc-500 hover:text-zinc-300"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="font-mono text-white text-sm break-all">
+                    {lastVerifiedContract.text}
                   </div>
                 </div>
-                <div className="flex gap-2.5">
-                  <input
-                    type="text"
-                    value={messageToTransmit}
-                    onChange={(e) => setMessageToTransmit(e.target.value)}
-                    disabled={isTransmitting}
-                    className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-emerald-400 font-mono text-sm focus:outline-none focus:border-emerald-500/30 disabled:opacity-50 min-w-0"
-                    placeholder="Enter payload..."
-                    maxLength={16}
-                  />
-                  <button
-                    onClick={transmitData}
-                    disabled={isTransmitting || !messageToTransmit}
-                    className="bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 font-bold px-5 py-2.5 rounded-xl transition-colors disabled:opacity-30 flex items-center gap-2 border border-emerald-500/30 shrink-0"
-                  >
-                    <Send className="w-4 h-4" />
-                    <span className="text-xs tracking-wider">BROADCAST</span>
-                  </button>
+              ) : (
+                <div className="p-3 rounded border border-zinc-800 bg-black text-zinc-600 text-sm font-mono">
+                  Awaiting transmission...
                 </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Bottom Action Bar */}
-        <div className="flex items-center gap-2.5">
-          <button
-            onClick={() => setShowLogs(!showLogs)}
-            className={`flex-1 backdrop-blur-2xl border rounded-2xl px-4 py-3 text-[10px] font-bold tracking-wider transition-colors flex items-center justify-center gap-2 ${
-              showLogs
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-black/50 border-white/[0.08] text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            LOG
-          </button>
-
-          <button
-            onClick={() => setShowTransmitter(!showTransmitter)}
-            className={`flex-1 backdrop-blur-2xl border rounded-2xl px-4 py-3 text-[10px] font-bold tracking-wider transition-colors flex items-center justify-center gap-2 ${
-              showTransmitter
-                ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
-                : 'bg-black/50 border-white/[0.08] text-zinc-500 hover:text-zinc-300'
-            }`}
-          >
-            <Radio className="w-3.5 h-3.5" />
-            TRANSMIT
-          </button>
-
-          {!isReceiving && (
-            <button
-              onClick={() => setIsReceiving(true)}
-              className="flex-1 backdrop-blur-2xl bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-4 py-3 text-[10px] font-bold tracking-wider text-emerald-400 transition-colors flex items-center justify-center gap-2 hover:bg-emerald-500/20"
-            >
-              <Eye className="w-3.5 h-3.5" />
-              RECEIVE
-            </button>
-          )}
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Terminal Logs */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 flex flex-col h-[400px]">
+          <h3 className="text-xs font-semibold tracking-wider text-zinc-400 flex items-center gap-2 mb-4">
+            <Terminal className="w-4 h-4" />
+            SYSTEM LOG
+          </h3>
+          
+          <div className="flex-1 overflow-y-auto space-y-2 font-mono text-xs flex flex-col-reverse">
+            <AnimatePresence>
+              {logs.map((log) => (
+                <motion.div 
+                  key={log.id}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  className={`flex gap-2 ${
+                    log.type === 'error' ? 'text-red-400' : 
+                    log.type === 'success' ? 'text-emerald-400' : 
+                    log.type === 'warning' ? 'text-yellow-400' : 
+                    'text-zinc-400'
+                  }`}
+                >
+                  <span className="opacity-50 shrink-0">[{new Date(log.id).toLocaleTimeString()}]</span>
+                  <span className="break-all">{log.text}</span>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </div>
+        </div>
+
       </div>
     </div>
   );
